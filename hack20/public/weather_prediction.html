@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🌤️ Weather Prediction</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #e0f7fa, #f1f8e9);
+      color: #2c3e50;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: white;
+      padding: 2rem;
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      text-align: center;
+      color: #0077b6;
+    }
+    #location {
+      font-size: 1.2rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+    #predicted-temp {
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      color: #e76f51;
+    }
+    canvas {
+      max-width: 100%;
+    }
+    #backBtn {
+      margin-bottom: 1rem;
+      background: #48cae4;
+      color: white;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    #backBtn:hover {
+      background: #0077b6;
+    }
+    @media (max-width: 600px) {
+      .container {
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.5rem;
+      }
+      #predicted-temp {
+        font-size: 1.1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button id="backBtn" onclick="goBack()">← Back</button>
+    <h1>🌤️ Weather Forecast & Prediction</h1>
+    <p id="location">Detecting location...</p>
+    <p id="predicted-temp">Loading...</p>
+    <canvas id="tempChart" height="250"></canvas>
+  </div>
+
+  <script>
+    function goBack() {
+      window.location.href = "index.html";
+    }
+
+    const openWeatherKey = "9685f38713234d8851954d583ec9de70";
+    const meteostatKey = '398a3f1be7msh91733d5fbe8b9d8p10f4bbjsnb4a625ca15b2';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const cityParam = urlParams.get("city");
+    const defaultCity = cityParam || "Hyderabad";
+    let cityName = defaultCity;
+
+    fetch(`https://api.openweathermap.org/data/2.5/weather?q=${defaultCity}&appid=${openWeatherKey}`)
+      .then(res => res.json())
+      .then(data => {
+        cityName = data.name;
+        const lat = data.coord.lat;
+        const lon = data.coord.lon;
+        document.getElementById("location").innerText = `📍 City: ${cityName}`;
+        getWeatherData(lat, lon);
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("predicted-temp").innerText = "❌ Unable to fetch location.";
+      });
+
+    function getWeatherData(lat, lon) {
+      const today = new Date();
+      const end = today.toISOString().split("T")[0];
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 6);
+      const start = startDate.toISOString().split("T")[0];
+
+      fetch(`https://meteostat.p.rapidapi.com/point/daily?lat=${lat}&lon=${lon}&start=${start}&end=${end}`, {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': meteostatKey,
+          'X-RapidAPI-Host': 'meteostat.p.rapidapi.com'
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        const temps = data.data.map(day => day.tavg);
+        const labels = data.data.map(day => day.date);
+        document.getElementById("predicted-temp").innerText = "🔄 Training model...";
+        updateChart(labels, temps);
+        trainModel(temps, labels);
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("predicted-temp").innerText = "⚠️ Error fetching weather data.";
+      });
+    }
+
+    function trainModel(temps, labels) {
+      const xs = tf.tensor1d(temps.map((_, i) => i + 1));
+      const ys = tf.tensor1d(temps);
+
+      const model = tf.sequential();
+      model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
+      model.compile({ loss: 'meanSquaredError', optimizer: 'sgd' });
+
+      model.fit(xs, ys, { epochs: 200 }).then(() => {
+        const nextDay = temps.length + 1;
+        const prediction = model.predict(tf.tensor1d([nextDay]));
+        prediction.data().then(pred => {
+          const predicted = pred[0].toFixed(2);
+          document.getElementById("predicted-temp").innerText =
+            `🌡️ Predicted temperature for tomorrow: ${predicted}°C`;
+
+          updateChart([...labels, "Tomorrow"], [...temps, predicted]);
+          sendTemperatureToBackend(cityName, predicted);
+        });
+      });
+    }
+
+    let chart;
+    function updateChart(labels, temps) {
+      if (chart) chart.destroy();
+      const ctx = document.getElementById("tempChart").getContext("2d");
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Temperature (°C)',
+            data: temps,
+            borderColor: '#0077b6',
+            backgroundColor: 'rgba(0, 119, 182, 0.2)',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Past 7 Days Temperature + Tomorrow Prediction',
+              font: { size: 16 }
+            },
+            legend: {
+              labels: { font: { size: 14 } }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: false
+            }
+          }
+        }
+      });
+    }
+
+    function sendTemperatureToBackend(city, temperature) {
+      fetch("http://127.0.0.1:5000/update-temp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          city: city,
+          temp: temperature
+        })
+      })
+      .then(res => res.json())
+      .then(data => console.log("✅ Updated backend:", data))
+      .catch(err => console.error("❌ Error sending data:", err));
+    }
+  </script>
+</body>
+</html>

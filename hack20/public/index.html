@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Weather App</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f8ff;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      width: 90%;
+      max-width: 500px;
+    }
+    .search {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .search input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    .search button {
+      background: #3498db;
+      border: none;
+      border-radius: 5px;
+      padding: 10px;
+      cursor: pointer;
+    }
+    .search button img {
+      width: 20px;
+      height: 20px;
+    }
+    .Weather {
+      text-align: center;
+    }
+    .Weather-icon {
+      width: 100px;
+      height: 100px;
+    }
+    .temp {
+      font-size: 48px;
+      margin: 10px 0;
+    }
+    .city {
+      font-size: 24px;
+      margin: 10px 0;
+    }
+    .details {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 20px;
+    }
+    .col {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .col img {
+      width: 30px;
+      height: 30px;
+    }
+    .error-message {
+      color: red;
+      margin-bottom: 10px;
+      display: none;
+    }
+    .prediction-container {
+      margin-top: 20px;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 5px;
+    }
+    #predictionBtn {
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #2ecc71;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  
+  <div class="card">
+    <div class="search">
+      <div class="error-message"></div>
+      <input type="text" id="cityInput" placeholder="Enter city name" spellcheck="false"/>
+      <button id="searchBtn"><img src="images/search.png" alt="Search"/></button>
+      <button class="voice-btn" id="voiceBtn"><img src="images/microphone.png"></button>
+      <button class="location-btn"><img src="images/location.png"></button>
+    </div>
+
+    <div class="Weather">
+      <img src="images/Clear.png" class="Weather-icon" />
+      <h1 class="temp">--°C</h1>
+      <h2 class="city">City</h2>
+
+      <div class="details">
+        <div class="col">
+          <img src="images/humidity.png" />
+          <div>
+            <p class="humidity">--%</p>
+            <p>Humidity</p>
+          </div>
+        </div>
+        <div class="col">
+          <img src="images/wind.png" />
+          <div>
+            <p class="wind">-- km/h</p>
+            <p>Wind Speed</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="aqi">
+        <p><strong>Air Quality:</strong> <span class="aqi-value">--</span></p>
+      </div>
+
+      <div class="alert-message"></div>
+
+      <div class="prediction-container" style="display: none;">
+        <h3>Temperature Prediction</h3>
+        <div id="predictionResult" style="font-weight: bold; color: green;"></div>
+        <canvas id="predictionChart" style="margin-top: 10px;"></canvas>
+      </div>
+      
+      <button id="predictionBtn">Advanced Prediction</button>
+    </div>
+  </div>
+
+  <script>
+    // DOM Elements
+    const cityInput = document.getElementById('cityInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const voiceBtn = document.getElementById('voiceBtn');
+    const locationBtn = document.querySelector('.location-btn');
+    const weatherIcon = document.querySelector('.Weather-icon');
+    const errorDisplay = document.querySelector('.error-message');
+    const predictionResult = document.getElementById('predictionResult');
+    const predictionContainer = document.querySelector('.prediction-container');
+    const predictionBtn = document.getElementById('predictionBtn');
+
+    // Main weather fetching function
+    async function fetchWeather(data) {
+        try {
+            showLoading();
+            
+            const response = await fetch('/api/weather', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch weather');
+            }
+            
+            updateWeatherUI(result);
+            hideError();
+            
+            // After getting weather, try to get prediction
+            if (data.city) {
+                getTemperaturePrediction(data.city);
+            }
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Get temperature prediction
+    async function getTemperaturePrediction(city) {
+        try {
+            const response = await fetch(`/api/predict-temp?city=${encodeURIComponent(city)}`);
+            const result = await response.json();
+            
+            if (!result.success) {
+                predictionContainer.style.display = 'none';
+                return;
+            }
+            
+            predictionContainer.style.display = 'block';
+            predictionResult.textContent = `Predicted temperature for next day: ${result.predicted_temp}°C`;
+            
+            // Render chart
+            renderPredictionChart(result.days, result.temps, result.predicted_temp);
+        } catch (error) {
+            console.error("Prediction error:", error);
+            predictionContainer.style.display = 'none';
+        }
+    }
+
+    // Render prediction chart
+    function renderPredictionChart(days, temps, predictedTemp) {
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+        
+        if (window.predictionChart) {
+            window.predictionChart.destroy();
+        }
+        
+        window.predictionChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [...days.map(d => `Day ${d}`), 'Next Day'],
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    data: [...temps, predictedTemp],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Temperature Trend and Prediction'
+                    }
+                }
+            }
+        });
+    }
+
+    // Update UI with weather data
+    function updateWeatherUI(data) {
+        document.querySelector('.city').textContent = data.name;
+        document.querySelector('.temp').textContent = `${Math.round(data.main.temp)}°C`;
+        document.querySelector('.humidity').textContent = `${data.main.humidity}%`;
+        document.querySelector('.wind').textContent = `${data.wind.speed} km/h`;
+        
+        const weatherMain = data.weather.main.toLowerCase();
+        const iconMap = {
+            'clouds': 'clouds.png',
+            'clear': 'clear.png',
+            'rain': 'rain.png',
+            'drizzle': 'drizzle.png',
+            'mist': 'mist.png',
+            'snow': 'snow.png',
+            'thunderstorm': 'thunderstorm.png'
+        };
+        weatherIcon.src = `images/${iconMap[weatherMain] || 'clouds.png'}`;
+    }
+
+    // Voice recognition
+    function setupVoiceRecognition() {
+        if (!('webkitSpeechRecognition' in window)) {
+            voiceBtn.style.display = 'none';
+            return;
+        }
+
+        const recognition = new webkitSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        voiceBtn.addEventListener('click', () => {
+            recognition.start();
+            voiceBtn.innerHTML = '<img src="images/mic-active.png">';
+            showLoading();
+        });
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript.trim();
+            cityInput.value = transcript;
+            voiceBtn.innerHTML = '<img src="images/microphone.png">';
+            searchByCity();
+        };
+
+        recognition.onerror = (event) => {
+            voiceBtn.innerHTML = '<img src="images/microphone.png">';
+            showError(`Voice error: ${event.error}`);
+            hideLoading();
+        };
+    }
+
+    // Location-based weather
+    async function getLocationWeather() {
+        if (!navigator.geolocation) {
+            showError("Geolocation not supported");
+            return;
+        }
+
+        showLoading();
+        
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                try {
+                    await fetchWeather({
+                        lat: position.coords.latitude,
+                        lon: position.coords.longitude
+                    });
+                    hideError();
+                } catch (error) {
+                    showError(error.message);
+                }
+            },
+            (error) => {
+                showError(error.message.includes('denied') ? 
+                      'Location access denied' : 
+                      'Failed to get location');
+                hideLoading();
+            }
+        );
+    }
+
+    // Search by city name
+    async function searchByCity() {
+        const city = cityInput.value.trim();
+        if (!city) {
+            showError('Please enter a city name');
+            return;
+        }
+        await fetchWeather({ city });
+    }
+
+    // UI Helpers
+    function showLoading() {
+        document.querySelector('.temp').textContent = 'Loading...';
+    }
+
+    function hideLoading() {
+        // Will be updated by actual data
+    }
+
+    function showError(message) {
+        errorDisplay.textContent = message;
+        errorDisplay.style.display = 'block';
+    }
+
+    function hideError() {
+        errorDisplay.style.display = 'none';
+    }
+
+    // Event Listeners
+    searchBtn.addEventListener('click', searchByCity);
+    cityInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchByCity();
+    });
+    locationBtn.addEventListener('click', getLocationWeather);
+    predictionBtn.addEventListener('click', () => {
+    const city = document.querySelector('.city').textContent;
+    window.location.href = `/weather-prediction?city=${encodeURIComponent(city)}`;
+    });
+
+    // Initialize
+    setupVoiceRecognition();
+  </script>
+</body>
+</html>

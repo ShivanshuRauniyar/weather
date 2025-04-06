@@ -1,0 +1,109 @@
+<!-- prediction.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Temperature Prediction</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial;
+      background: linear-gradient(to right, #00c6ff, #0072ff);
+      color: white;
+      text-align: center;
+      padding: 30px;
+    }
+    canvas {
+      background: white;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+    input, button {
+      padding: 8px;
+      margin: 5px;
+      border-radius: 4px;
+      border: none;
+      font-size: 14px;
+    }
+    button {
+      cursor: pointer;
+      background-color: #ffaa00;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <h2>🌡️ Submit Temperature Data</h2>
+
+  <label for="city">City:</label>
+  <input type="text" id="city" required><br>
+
+  <label for="day">Day:</label>
+  <input type="number" id="day" required><br>
+
+  <label for="temp">Temperature (°C):</label>
+  <input type="number" id="temp" required><br>
+
+  <button onclick="submitData()">Submit</button>
+  <button onclick="getPrediction()">Get Prediction</button>
+
+  <h2>📈 Temperature Prediction Chart</h2>
+  <canvas id="predictionChart" width="600" height="400"></canvas>
+
+  <script>
+    function submitData() {
+      const city = document.getElementById("city").value;
+      const day = parseInt(document.getElementById("day").value);
+      const temp = parseFloat(document.getElementById("temp").value);
+
+      fetch('http://127.0.0.1:5000/update-temp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ city, day, temp })
+      })
+      .then(res => res.json())
+      .then(data => alert(data.message))
+      .catch(err => alert("Error: " + err));
+    }
+
+    function getPrediction() {
+      const city = document.getElementById("city").value;
+
+      fetch(`http://127.0.0.1:5000/predict-temp?city=${city}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          alert(data.error);
+        } else {
+          alert(`Predicted Temp for ${data.city}: ${data.predicted_temp}°C`);
+          renderChart(data.days, data.temps.concat(data.predicted_temp));
+        }
+      })
+      .catch(err => alert("Prediction Error: " + err));
+    }
+
+    function renderChart(days, temps) {
+      const ctx = document.getElementById('predictionChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: days.map((d, i) => "Day " + d),
+          datasets: [{
+            label: "Temperature (°C)",
+            data: temps,
+            borderColor: "#ffcc00",
+            backgroundColor: "rgba(255, 204, 0, 0.2)",
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: false }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
