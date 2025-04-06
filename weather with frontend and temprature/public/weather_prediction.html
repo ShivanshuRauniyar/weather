@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🌤️ Weather Prediction</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #3498db;
+      --secondary: #2ecc71;
+      --danger: #e74c3c;
+      --warning: #f1c40f;
+      --info: #1abc9c;
+      --dark: #2c3e50;
+      --light: #ecf0f1;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Poppins', sans-serif;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    /* Animated Background */
+    .background {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+      background: linear-gradient(-45deg, #1e3c72, #2a5298, #0f2027, #203a43);
+      background-size: 400% 400%;
+      animation: gradientBG 15s ease infinite;
+    }
+    
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    
+    /* Compact Container */
+    .container {
+      max-width: 900px;
+      width: 95%;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+      border-radius: 20px;
+      padding: 25px;
+      box-shadow: 0 15px 25px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    /* Header Section */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    #backBtn {
+      align-self: flex-start;
+      background: rgba(52, 152, 219, 0.8);
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 10px;
+    }
+    
+    #backBtn:hover {
+      background: rgba(52, 152, 219, 1);
+      transform: translateY(-2px);
+    }
+    
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      text-align: center;
+      color: #fff;
+    }
+    
+    /* Info Section */
+    .info-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    
+    #location {
+      font-size: 1.1rem;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.9);
+    }
+    
+    #predicted-temp {
+      text-align: center;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #2ecc71;
+      padding: 12px;
+      background: rgba(46, 204, 113, 0.2);
+      border-radius: 15px;
+    }
+    
+    /* Chart Container */
+    .chart-container {
+      width: 100%;
+      height: 300px;
+      margin-top: 10px;
+    }
+    
+    /* Responsive Adjustments */
+    @media (max-width: 768px) {
+      .container {
+        padding: 20px;
+      }
+      
+      h1 {
+        font-size: 1.5rem;
+      }
+      
+      #predicted-temp {
+        font-size: 1.1rem;
+      }
+      
+      .chart-container {
+        height: 250px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      body {
+        padding: 15px;
+      }
+      
+      .container {
+        padding: 15px;
+      }
+      
+      h1 {
+        font-size: 1.3rem;
+      }
+      
+      #predicted-temp {
+        font-size: 1rem;
+      }
+      
+      .chart-container {
+        height: 220px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  
+  <div class="container">
+    <div class="header">
+      <button id="backBtn" onclick="goBack()">← Back</button>
+      <h1>🌤️ Advanced Weather Forecast</h1>
+    </div>
+    
+    <div class="info-section">
+      <p id="location">Detecting location...</p>
+      <p id="predicted-temp">Loading prediction data...</p>
+    </div>
+    
+    <div class="chart-container">
+      <canvas id="tempChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    function goBack() {
+      window.location.href = "index.html";
+    }
+
+    const openWeatherKey = "9685f38713234d8851954d583ec9de70";
+    const meteostatKey = '398a3f1be7msh91733d5fbe8b9d8p10f4bbjsnb4a625ca15b2';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const cityParam = urlParams.get("city");
+    const defaultCity = cityParam || "Hyderabad";
+    let cityName = defaultCity;
+
+    // Update UI with loading state
+    document.getElementById("predicted-temp").innerText = "🔄 Loading weather data...";
+
+    fetch(`https://api.openweathermap.org/data/2.5/weather?q=${defaultCity}&appid=${openWeatherKey}`)
+      .then(res => res.json())
+      .then(data => {
+        cityName = data.name;
+        const lat = data.coord.lat;
+        const lon = data.coord.lon;
+        document.getElementById("location").innerText = `📍 ${cityName}`;
+        document.getElementById("predicted-temp").innerText = "🔄 Fetching historical data...";
+        getWeatherData(lat, lon);
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("predicted-temp").innerText = "❌ Error loading location data";
+      });
+
+    function getWeatherData(lat, lon) {
+      const today = new Date();
+      const end = today.toISOString().split("T")[0];
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 6);
+      const start = startDate.toISOString().split("T")[0];
+
+      fetch(`https://meteostat.p.rapidapi.com/point/daily?lat=${lat}&lon=${lon}&start=${start}&end=${end}`, {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': meteostatKey,
+          'X-RapidAPI-Host': 'meteostat.p.rapidapi.com'
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.data || data.data.length === 0) {
+          throw new Error("No weather data available");
+        }
+        
+        const temps = data.data.map(day => day.tavg);
+        const labels = data.data.map(day => {
+          const date = new Date(day.date);
+          return date.toLocaleDateString('en-US', { weekday: 'short' });
+        });
+        
+        document.getElementById("predicted-temp").innerText = "🔄 Training prediction model...";
+        updateChart(labels, temps);
+        trainModel(temps, labels);
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("predicted-temp").innerText = "⚠️ Error fetching historical data";
+      });
+    }
+
+    function trainModel(temps, labels) {
+      const xs = tf.tensor1d(temps.map((_, i) => i + 1));
+      const ys = tf.tensor1d(temps);
+
+      const model = tf.sequential();
+      model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
+      model.compile({ loss: 'meanSquaredError', optimizer: 'sgd' });
+
+      model.fit(xs, ys, { epochs: 200 }).then(() => {
+        const nextDay = temps.length + 1;
+        const prediction = model.predict(tf.tensor1d([nextDay]));
+        prediction.data().then(pred => {
+          const predicted = pred[0].toFixed(2);
+          document.getElementById("predicted-temp").innerText = `🌡️ Tomorrow: ${predicted}°C`;
+          
+          // Add today's label
+          const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+          updateChart([...labels, todayLabel, "Tomorrow"], [...temps, null, predicted]);
+          sendTemperatureToBackend(cityName, predicted);
+        });
+      });
+    }
+
+    let chart;
+    function updateChart(labels, temps) {
+      if (chart) chart.destroy();
+      
+      const ctx = document.getElementById("tempChart").getContext("2d");
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Temperature (°C)',
+            data: temps,
+            borderColor: '#2ecc71',
+            backgroundColor: 'rgba(46, 204, 113, 0.2)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              bodyFont: {
+                family: 'Poppins'
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false
+              },
+              ticks: {
+                color: 'rgba(255, 255, 255, 0.8)'
+              }
+            },
+            y: {
+              grid: {
+                color: 'rgba(255, 255, 255, 0.1)'
+              },
+              ticks: {
+                color: 'rgba(255, 255, 255, 0.8)'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function sendTemperatureToBackend(city, temperature) {
+      fetch("http://127.0.0.1:5000/update-temp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          city: city,
+          temp: temperature
+        })
+      })
+      .then(res => res.json())
+      .then(data => console.log("Updated backend:", data))
+      .catch(err => console.error("Error sending data:", err));
+    }
+  </script>
+</body>
+</html>
